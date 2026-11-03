@@ -116,11 +116,10 @@ export default function Dashboard() {
   // =========================
 
   useEffect(() => {
-    if (isLoggedIn) {
-      loadTutors();
-    }
-  }, [isLoggedIn]);
-
+  if (isLoggedIn) {
+    loadTutors();
+  }
+}, [isLoggedIn, selectedSubject]);
   // =========================
   // LOAD SESSIONS
   // =========================
@@ -1014,10 +1013,7 @@ session_time: bookingTime,
                 {subjects.map((subject) => (
                   <button
                     key={subject}
-                    onClick={() => {
-                      setSelectedSubject(subject);
-                      setTimeout(loadTutors, 0);
-                    }}
+                   onClick={() => setSelectedSubject(subject)}
                     style={{
                       ...styles.subjectButton,
                       ...(selectedSubject === subject
