@@ -447,8 +447,8 @@ export default function Dashboard() {
           student_id: currentUser.id,
           tutor_id: selectedTutor.id,
           subject: bookingSubject,
-          date: bookingDate,
-          time: bookingTime,
+          session_date: bookingDate,
+session_time: bookingTime,
         }),
       });
 
