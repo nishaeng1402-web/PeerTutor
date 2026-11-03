@@ -245,10 +245,10 @@ def login(data: LoginRequest):
     cursor = db.cursor()
 
     cursor.execute("""
-        SELECT *
-        FROM users
-        WHERE email = ?
-    """, (data.email,))
+    SELECT *
+    FROM users
+    WHERE email = ? COLLATE NOCASE
+""", (data.email.strip(),))
 
     user = cursor.fetchone()
     db.close()
