@@ -1,9 +1,11 @@
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 import hashlib
 import os
+import json
 from datetime import datetime
 
 
@@ -15,7 +17,7 @@ app = FastAPI(title="PeerTutor API")
 
 
 # =========================================================
-# CORS - CONNECT REACT FRONTEND
+# CORS
 # =========================================================
 
 app.add_middleware(
@@ -25,6 +27,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # =========================================================
 # DATABASE
@@ -40,11 +43,9 @@ def get_db():
 
 
 def create_tables():
-
     db = get_db()
     cursor = db.cursor()
 
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +58,6 @@ def create_tables():
         )
     """)
 
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tutor_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +72,6 @@ def create_tables():
         )
     """)
 
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +87,16 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     db.commit()
     db.close()
 
@@ -100,7 +109,6 @@ create_tables()
 # =========================================================
 
 def hash_password(password):
-
     salt = os.urandom(16)
 
     password_hash = hashlib.pbkdf2_hmac(
@@ -114,11 +122,8 @@ def hash_password(password):
 
 
 def verify_password(password, stored_password):
-
     try:
-
         salt_hex, hash_hex = stored_password.split(":")
-
         salt = bytes.fromhex(salt_hex)
 
         new_hash = hashlib.pbkdf2_hmac(
@@ -172,7 +177,6 @@ class BookingRequest(BaseModel):
 
 @app.get("/")
 def home():
-
     return {
         "message": "PeerTutor Backend is Running!",
         "status": "success",
@@ -186,7 +190,6 @@ def home():
 
 @app.post("/api/register")
 def register(data: RegisterRequest):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -199,7 +202,6 @@ def register(data: RegisterRequest):
 
     if existing:
         db.close()
-
         raise HTTPException(
             status_code=400,
             detail="Email already registered"
@@ -239,7 +241,6 @@ def register(data: RegisterRequest):
 
 @app.post("/api/login")
 def login(data: LoginRequest):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -250,7 +251,6 @@ def login(data: LoginRequest):
     """, (data.email,))
 
     user = cursor.fetchone()
-
     db.close()
 
     if not user:
@@ -259,10 +259,7 @@ def login(data: LoginRequest):
             detail="Invalid email or password"
         )
 
-    if not verify_password(
-        data.password,
-        user["password"]
-    ):
+    if not verify_password(data.password, user["password"]):
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password"
@@ -286,7 +283,6 @@ def login(data: LoginRequest):
 
 @app.post("/api/tutors")
 def create_tutor(data: TutorRequest):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -299,7 +295,6 @@ def create_tutor(data: TutorRequest):
 
     if not user:
         db.close()
-
         raise HTTPException(
             status_code=404,
             detail="User not found"
@@ -316,7 +311,6 @@ def create_tutor(data: TutorRequest):
     existing = cursor.fetchone()
 
     if existing:
-
         cursor.execute("""
             UPDATE tutor_profiles
             SET bio = ?,
@@ -333,7 +327,6 @@ def create_tutor(data: TutorRequest):
         message = "Tutor profile updated"
 
     else:
-
         cursor.execute("""
             INSERT INTO tutor_profiles
             (
@@ -361,9 +354,7 @@ def create_tutor(data: TutorRequest):
     db.commit()
     db.close()
 
-    return {
-        "message": message
-    }
+    return {"message": message}
 
 
 # =========================================================
@@ -372,12 +363,10 @@ def create_tutor(data: TutorRequest):
 
 @app.get("/api/tutors")
 def get_tutors(subject: str = ""):
-
     db = get_db()
     cursor = db.cursor()
 
     if subject:
-
         cursor.execute("""
             SELECT
                 tutor_profiles.id AS tutor_profile_id,
@@ -398,7 +387,6 @@ def get_tutors(subject: str = ""):
         """, (f"%{subject}%",))
 
     else:
-
         cursor.execute("""
             SELECT
                 tutor_profiles.id AS tutor_profile_id,
@@ -418,13 +406,11 @@ def get_tutors(subject: str = ""):
         """)
 
     tutors = cursor.fetchall()
-
     db.close()
 
     result = []
 
     for tutor in tutors:
-
         initials = "".join(
             word[0]
             for word in tutor["name"].split()
@@ -458,7 +444,6 @@ def get_tutors(subject: str = ""):
 
 @app.get("/api/tutors/{user_id}")
 def get_tutor(user_id: int):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -481,7 +466,6 @@ def get_tutor(user_id: int):
     """, (user_id,))
 
     tutor = cursor.fetchone()
-
     db.close()
 
     if not tutor:
@@ -513,53 +497,42 @@ def get_tutor(user_id: int):
 
 @app.post("/api/bookings")
 def create_booking(data: BookingRequest):
-
     db = get_db()
     cursor = db.cursor()
 
-    # Check student
     cursor.execute(
         "SELECT id FROM users WHERE id = ?",
         (data.student_id,)
     )
-
     student = cursor.fetchone()
 
     if not student:
         db.close()
-
         raise HTTPException(
             status_code=404,
             detail="Student not found"
         )
 
-    # Check tutor
     cursor.execute(
         "SELECT id FROM users WHERE id = ?",
         (data.tutor_id,)
     )
-
     tutor = cursor.fetchone()
 
     if not tutor:
         db.close()
-
         raise HTTPException(
             status_code=404,
             detail="Tutor not found"
         )
 
-    # Prevent self booking
     if data.student_id == data.tutor_id:
-
         db.close()
-
         raise HTTPException(
             status_code=400,
             detail="You cannot book yourself"
         )
 
-    # Check duplicate time slot
     cursor.execute("""
         SELECT id
         FROM bookings
@@ -576,9 +549,7 @@ def create_booking(data: BookingRequest):
     existing = cursor.fetchone()
 
     if existing:
-
         db.close()
-
         raise HTTPException(
             status_code=400,
             detail="This time slot is already booked"
@@ -624,7 +595,6 @@ def create_booking(data: BookingRequest):
 
 @app.get("/api/bookings/student/{student_id}")
 def get_student_bookings(student_id: int):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -644,7 +614,6 @@ def get_student_bookings(student_id: int):
     """, (student_id,))
 
     bookings = cursor.fetchall()
-
     db.close()
 
     return [
@@ -666,7 +635,6 @@ def get_student_bookings(student_id: int):
 
 @app.get("/api/bookings/tutor/{tutor_id}")
 def get_tutor_bookings(tutor_id: int):
-
     db = get_db()
     cursor = db.cursor()
 
@@ -686,7 +654,6 @@ def get_tutor_bookings(tutor_id: int):
     """, (tutor_id,))
 
     bookings = cursor.fetchall()
-
     db.close()
 
     return [
@@ -700,8 +667,44 @@ def get_tutor_bookings(tutor_id: int):
         }
         for booking in bookings
     ]
+
+
 # =========================================================
-# REAL-TIME CHAT
+# CHAT HISTORY
+# =========================================================
+
+@app.get("/api/chat/history/{user_id}/{other_user_id}")
+def get_chat_history(user_id: int, other_user_id: int):
+    if user_id == other_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid chat users"
+        )
+
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute("""
+        SELECT id, sender_id, receiver_id, message, created_at
+        FROM chat_messages
+        WHERE (sender_id = ? AND receiver_id = ?)
+           OR (sender_id = ? AND receiver_id = ?)
+        ORDER BY id ASC
+    """, (
+        user_id,
+        other_user_id,
+        other_user_id,
+        user_id
+    ))
+
+    messages = [dict(row) for row in cursor.fetchall()]
+    db.close()
+
+    return {"messages": messages}
+
+
+# =========================================================
+# REAL-TIME CHAT WITH PERSISTENT STORAGE
 # =========================================================
 
 active_connections = {}
@@ -713,29 +716,83 @@ async def websocket_chat(
     user_id: int,
     other_user_id: int
 ):
-    await websocket.accept()
+    if user_id == other_user_id:
+        await websocket.close(code=1008)
+        return
 
-    # Same chat room whether A opens B's chat
-    # or B opens A's chat
     connection_key = tuple(sorted([user_id, other_user_id]))
+
+    await websocket.accept()
 
     if connection_key not in active_connections:
         active_connections[connection_key] = []
 
     active_connections[connection_key].append(websocket)
 
+    print(f"CHAT CONNECTED: {user_id} <-> {other_user_id}")
+
     try:
         while True:
-            message = await websocket.receive_text()
+            message_text = await websocket.receive_text()
 
-            # Send message to everyone in this chat room
-            for connection in active_connections.get(connection_key, []):
-                await connection.send_text(message)
+            # Save message in database.
+            # Keep the original JSON message unchanged for the frontend.
+            try:
+                message_data = json.loads(message_text)
+                if not isinstance(message_data, dict):
+                    raise ValueError("Message must be a JSON object")
+
+                if int(message_data.get("sender_id", -1)) != user_id:
+                    await websocket.close(code=1008)
+                    return
+
+                if not isinstance(message_data.get("text"), str):
+                    raise ValueError("Message text is required")
+
+            except (ValueError, TypeError, json.JSONDecodeError):
+                await websocket.close(code=1008)
+                return
+
+            db = get_db()
+            cursor = db.cursor()
+
+            cursor.execute("""
+                INSERT INTO chat_messages
+                (sender_id, receiver_id, message, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (
+                user_id,
+                other_user_id,
+                message_text,
+                datetime.now().isoformat()
+            ))
+
+            db.commit()
+            db.close()
+
+            print(f"CHAT MESSAGE SAVED: {user_id} -> {other_user_id}")
+
+            # Relay to the other user's connected browser.
+            connections = active_connections.get(connection_key, [])
+
+            for connection in connections.copy():
+                if connection is websocket:
+                    continue
+
+                try:
+                    await connection.send_text(message_text)
+
+                except Exception as error:
+                    print("CHAT SEND ERROR:", error)
+
+                    if connection in active_connections.get(connection_key, []):
+                        active_connections[connection_key].remove(connection)
 
     except WebSocketDisconnect:
+        print(f"CHAT DISCONNECTED: {user_id} <-> {other_user_id}")
 
+    finally:
         if connection_key in active_connections:
-
             if websocket in active_connections[connection_key]:
                 active_connections[connection_key].remove(websocket)
 
