@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
@@ -700,3 +700,44 @@ def get_tutor_bookings(tutor_id: int):
         }
         for booking in bookings
     ]
+# =========================================================
+# REAL-TIME CHAT
+# =========================================================
+
+active_connections = {}
+
+
+@app.websocket("/ws/chat/{user_id}/{other_user_id}")
+async def websocket_chat(
+    websocket: WebSocket,
+    user_id: int,
+    other_user_id: int
+):
+    await websocket.accept()
+
+    # Same chat room whether A opens B's chat
+    # or B opens A's chat
+    connection_key = tuple(sorted([user_id, other_user_id]))
+
+    if connection_key not in active_connections:
+        active_connections[connection_key] = []
+
+    active_connections[connection_key].append(websocket)
+
+    try:
+        while True:
+            message = await websocket.receive_text()
+
+            # Send message to everyone in this chat room
+            for connection in active_connections.get(connection_key, []):
+                await connection.send_text(message)
+
+    except WebSocketDisconnect:
+
+        if connection_key in active_connections:
+
+            if websocket in active_connections[connection_key]:
+                active_connections[connection_key].remove(websocket)
+
+            if not active_connections[connection_key]:
+                del active_connections[connection_key]
